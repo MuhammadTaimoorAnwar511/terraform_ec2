@@ -1,0 +1,187 @@
+ec2.tf:
+# 3) Launch your EC2 into the default VPC using that SG
+
+resource "aws_instance" "ec2_instance" {
+  ami                    = var.ec2_ami
+  instance_type          = var.ec2_type
+  key_name               = var.ec2_key_name
+  user_data              = file(var.ec2_user_data)
+
+  # Attach your custom SG
+  vpc_security_group_ids = [aws_security_group.ec2_sg.id]
+
+  # Customize root volume
+  root_block_device {
+    volume_type           = var.ec2_vol_type     # general purpose SSD v3
+    volume_size           = var.ec2_vol_size     # GiB
+    iops                  = var.ec2_vol_iops                 # only needed for gp3/io1/io2
+    delete_on_termination = var.ec2_vol_delete_on_termination
+    encrypted             = var.ec2_vol_encrypted
+  }
+
+  # (optional) attach an additional 20 GiB gp2 volume:
+  # ebs_block_device {
+  #   device_name           = "/dev/sdf"
+  #   volume_type           = "gp2"
+  #   volume_size           = 20
+  #   delete_on_termination = true
+  # }
+
+  tags = {
+    Name = var.ec2_instance_name
+    env  = var.ec2_environment
+  }
+}
+===
+output.tf:
+output "ec2_instance_public_ip" {
+  description = "The public IPv4 address of the EC2 instance"
+  value       = aws_instance.ec2_instance.public_ip
+}
+===
+provider.tf:
+terraform {
+  required_providers {
+    aws = {
+      source = "hashicorp/aws"
+      version = "6.2.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.ec2_region
+}
+===
+security-groups.tf:
+# 2) Create your Security Group in that VPC
+
+resource "aws_security_group" "ec2_sg" {
+  name        = var.sg_name
+  description = "Custom SG for ${var.ec2_instance_name}"
+  vpc_id      = data.aws_vpc.default.id
+
+  # Ingress rules
+  ingress {
+    description      = "SSH"
+    from_port        = 22
+    to_port          = 22
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]       # open to the world – tighten as needed
+  }
+
+  # ingress {
+  #   description      = "HTTP"
+  #   from_port        = 80
+  #   to_port          = 80
+  #   protocol         = "tcp"
+  #   cidr_blocks      = ["0.0.0.0/0"]
+  # }
+
+  # Egress: allow all outbound by default
+  egress {
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = var.sg_name
+    env  = var.ec2_environment
+  }
+}
+===
+vpc.tf:
+# 1) Fetch the Default VPC
+
+data "aws_vpc" "default" {
+  default = true
+}
+===
+variable.tf:
+#EC2 Variables
+variable "ec2_region" {
+  description = "name of region"
+  default = "us-east-1"
+  type = string
+}
+variable "ec2_instance_name" {
+  description = "name of ec2_instance"
+  default = "ec2_a"
+  type = string
+}
+variable "ec2_ami" {
+  description = "ami of ec2_instance"
+  default = "ami-020cba7c55df1f615"
+  type = string
+}
+variable "ec2_type" {
+  description = "type of ec2_instance"
+  default = "t2.micro"
+  type = string
+}
+variable "ec2_vol_type" {
+  description = "volume type of ec2_instance"
+  default = "gp3"
+  type = string
+}
+variable "ec2_vol_size" {
+  description = "volume size of ec2_instance"
+  default = 8
+  type = number
+}
+variable "ec2_vol_iops" {
+  description = "IOPS for gp3/io1/io2 volumes"
+  default     = 3000
+  type        = number
+}
+variable "ec2_vol_delete_on_termination" {
+  description = "delete ec2 volume on termination"
+  default     = true
+  type        = bool
+}
+variable "ec2_vol_encrypted" {
+  description = "encrypt ec2 volume on termination"
+  default     = false
+  type        = bool
+}
+variable "ec2_key_name" {
+  description = "pem file for ec2_instance"
+  default = "Practise-ec2-key"
+  type = string
+}
+variable "ec2_user_data" {
+  description = "user data script for ec2_instance"
+  default = "user-data.sh"
+  type = string
+}
+variable "ec2_environment" {
+  description = "name of environment"
+  default = "dev"
+  type = string
+}
+# SECURITY GROUP VARIABLES
+variable "sg_name" {
+  description = "name of security group"
+  default = "terraform-sg"
+  type = string
+}
+===
+terraform.tfvars:
+# EC2 VARIABLES
+ec2_region           = "us-east-1"
+ec2_instance_name    = "ec2_A"
+ec2_ami              = "ami-020cba7c55df1f615" #Ubunut 24.04 default
+ec2_type             = "t2.micro"
+ec2_key_name         = "Practise-ec2-key"      #your pem key name
+ec2_user_data        = "user-data.sh"          #script
+ec2_vol_type         = "gp3"                   #default
+ec2_vol_size         =  8                      #default
+ec2_vol_iops         =  3000                   #default
+ec2_vol_delete_on_termination = true           #default
+ec2_vol_encrypted    = false                   #default
+ec2_environment      = "dev"
+# SG VARIABLES
+sg_name              = "ec2_A-sg"          
+===
